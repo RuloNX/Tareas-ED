@@ -1,222 +1,318 @@
 #include "tdas/extra.h"
-#include "tdas/list.h"
+#include "tdas/list.h" // Agrega el archivo de encabezado que contiene la declaración de list_append
 #include "tdas/map.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include "tdas/list.h"
+#define MAX_LINEA 256
+typedef struct {
+    char id[100];
+    char titulo[100];
+    List *generos;
+    char director[300];
+    float rating;
+    int anio;
+} Pelicula;
 
 typedef struct {
-  char id[100];
-  char title[100];
-  List *genres;
-  char director[300];
-  float rating;
-  int year;
-} Film;
+    double limite_inferior;
+    double limite_superior;
+} RangoCalificacion;
 
-// Menú principal
 void mostrarMenuPrincipal() {
-  limpiarPantalla();
-  puts("========================================");
-  puts("     Base de Datos de Películas");
-  puts("========================================");
+    limpiarPantalla();
+    puts("========================================");
+    puts("     Base de Datos de Películas");
+    puts("========================================");
 
-  puts("1) Cargar Películas");
-  puts("2) Buscar por id");
-  puts("3) Buscar por director");
-  puts("4) Buscar por género");
-  puts("5) Buscar por década");
-  puts("6) Buscar por rango de calificaciones");
-  puts("7) Buscar por década y género");
-  puts("8) Salir");
+    puts("1) Cargar Películas");
+    puts("2) Buscar por id");
+    puts("3) Buscar por director");
+    puts("4) Buscar por género");
+    puts("5) Buscar por década");
+    puts("6) Buscar por rango de calificaciones");
+    puts("7) Buscar por década y género");
+    puts("8) Salir");
 }
 
-/**
- * Compara dos claves de tipo string para determinar si son iguales.
- * Esta función se utiliza para inicializar mapas con claves de tipo string.
- *
- * @param key1 Primer puntero a la clave string.
- * @param key2 Segundo puntero a la clave string.
- * @return Retorna 1 si las claves son iguales, 0 de lo contrario.
- */
 int is_equal_str(void *key1, void *key2) {
-  return strcmp((char *)key1, (char *)key2) == 0;
+    return strcmp((char *)key1, (char *)key2) == 0;
 }
 
-/**
- * Compara dos claves de tipo entero para determinar si son iguales.
- * Esta función se utiliza para inicializar mapas con claves de tipo entero.
- *
- * @param key1 Primer puntero a la clave entera.
- * @param key2 Segundo puntero a la clave entera.
- * @return Retorna 1 si las claves son iguales, 0 de lo contrario.
- */
-int is_equal_int(void *key1, void *key2) {
-  return *(int *)key1 == *(int *)key2; // Compara valores enteros directamente
-}
+void cargar_peliculas(Map *pelis_byid) {
+    FILE *archivo = fopen("peliculas.csv", "r");
+    if (archivo == NULL) return;
 
-/**
- * Carga películas desde un archivo CSV y las almacena en un mapa por ID.
- */
-void cargar_peliculas(Map *pelis_byid, Map *pelis_bygenres) {
-  // Intenta abrir el archivo CSV que contiene datos de películas
-  FILE *archivo = fopen("data/Top1500.csv", "r");
-  if (archivo == NULL) {
-    perror(
-        "Error al abrir el archivo"); // Informa si el archivo no puede abrirse
-    return;
-  }
+    char linea[MAX_LINEA];
+    fgets(linea, MAX_LINEA, archivo);
 
-  char **campos;
-  // Leer y parsear una línea del archivo CSV. La función devuelve un array de
-  // strings, donde cada elemento representa un campo de la línea CSV procesada.
-  campos = leer_linea_csv(archivo, ','); // Lee los encabezados del CSV
+    char id[100], titulo[100], director[300], rating_str[20], anio_str[10], *genero;
+    float rating;
+    int anio;
 
-  // Lee cada línea del archivo CSV hasta el final
-  while ((campos = leer_linea_csv(archivo, ',')) != NULL) {
-    // Crea una nueva estructura Film y almacena los datos de cada película
-    Film *peli = (Film *)malloc(sizeof(Film));
-    strcpy(peli->id, campos[1]);        // Asigna ID
-    strcpy(peli->title, campos[5]);     // Asigna título
-    strcpy(peli->director, campos[14]); // Asigna director
-    peli->genres = split_string(campos[11], ",");       // Inicializa la lista de géneros
-    peli->year =
-        atoi(campos[10]); // Asigna año, convirtiendo de cadena a entero
+    while (fgets(linea, MAX_LINEA, archivo) != NULL) {
+        if (sscanf(linea, "%99[^,],%99[^,],%299[^,],%19[^,],%9[^,],", id, titulo, director, rating_str, anio_str) != 5) continue;
+        rating = atof(rating_str);
+        anio = atoi(anio_str);
 
-    
-    // Inserta la película en el mapa usando el ID como clave
-    map_insert(pelis_byid, peli->id, peli);
+        Pelicula *pelicula = (Pelicula *)malloc(sizeof(Pelicula));
+        if (pelicula == NULL) break;
 
-    // Código generado con ayuda de chatgpt3.5
-    // conversación: https://chat.openai.com/share/5f0643ad-e8f5-4fb7-a0fa-2d2f92408429
-    
-    // Obtiene el primer género de la lista de géneros de la película
-    char *genre = list_first(peli->genres);
-    // Itera sobre cada género de la película
-    while (genre != NULL) {
-        // Busca el género en el mapa pelis_bygenres
-        MapPair *genre_pair = map_search(pelis_bygenres, genre);
+        strcpy(pelicula->id, id);
+        strcpy(pelicula->titulo, titulo);
+        strcpy(pelicula->director, director);
+        pelicula->rating = rating;
+        pelicula->anio = anio;
 
-        // Si el género no existe en el mapa, crea una nueva lista y agrégala al mapa
-        if (genre_pair == NULL) {
-            List *new_list = list_create();
-            list_pushBack(new_list, peli);
-            map_insert(pelis_bygenres, genre, new_list);
-        } else {
-            // Si el género ya existe en el mapa, obtén la lista y agrega la película
-            List *genre_list = (List *)genre_pair->value;
-            list_pushBack(genre_list, peli);
+        pelicula->generos = list_create();
+        if (pelicula->generos == NULL) {
+            free(pelicula);
+            break;
         }
 
-        // Avanza al siguiente género en la lista
-        genre = list_next(peli->genres);
+        char *ptr = linea;
+        while ((genero = strsep(&ptr, ",")) != NULL) {
+            if (*genero != '\0') {
+                list_append(pelicula->generos, strdup(genero));
+            }
+        }
+
+        map_insert(pelis_byid, pelicula->id, pelicula);
     }
-    
-  }
-  fclose(archivo); // Cierra el archivo después de leer todas las líneas
 
-
-  // Itera sobre el mapa para mostrar las películas cargadas
-  MapPair *pair = map_first(pelis_byid);
-  while (pair != NULL) {
-    Film *peli = pair->value;
-    printf("ID: %s, Título: %s, Director: %s, Año: %d\n", peli->id, peli->title,
-           peli->director, peli->year);
-
-    printf("Géneros: ");
-    for(char *genre = list_first(peli->genres); genre != NULL; genre = list_next(peli->genres))
-      printf("%s, ", genre);
-    printf("\n");
-    
-    pair = map_next(pelis_byid); // Avanza al siguiente par en el mapa
-  }
+    fclose(archivo);
 }
 
-/**
- * Busca y muestra la información de una película por su ID en un mapa.
- */
-void buscar_por_id(Map *pelis_byid) {
-  char id[10]; // Buffer para almacenar el ID de la película
-
-  // Solicita al usuario el ID de la película
-  printf("Ingrese el id de la película: ");
-  scanf("%s", id); // Lee el ID del teclado
-
-  // Busca el par clave-valor en el mapa usando el ID proporcionado
-  MapPair *pair = map_search(pelis_byid, id);
-
-  // Si se encontró el par clave-valor, se extrae y muestra la información de la
-  // película
-  if (pair != NULL) {
-    Film *peli =
-        pair->value; // Obtiene el puntero a la estructura de la película
-    // Muestra el título y el año de la película
-    printf("Título: %s, Año: %d\n", peli->title, peli->year);
-  } else {
-    // Si no se encuentra la película, informa al usuario
-    printf("La película con id %s no existe\n", id);
-  }
+void buscar_por_id(Map *pelis_byid, const char *id) {
+    printf("Buscando película por ID: %s\n", id);
+    Pelicula *pelicula = map_get(pelis_byid, id);
+    if (pelicula != NULL) {
+        printf("Título: %s, Director: %s, Año: %d\n",
+               pelicula->titulo, pelicula->director, pelicula->anio);
+    } else {
+        printf("No se encontró ninguna película con el ID: %s\n", id);
+    }
 }
 
-void buscar_por_genero(Map *pelis_bygenres) {
-  char genero[100];
+void buscar_por_genero(Map *pelis_byid, const char *genero) {
+    MapPair *pair = map_first(pelis_byid);
+    bool encontrado = false;
 
-  // Solicita al usuario el ID de la película
-  printf("Ingrese el género de la película: ");
-  scanf("%s", genero); // Lee el ID del teclado
+    while (pair != NULL) {
+        Pelicula *pelicula = pair->value;
+        List *generos = pelicula->generos;
 
-  MapPair *pair = map_search(pelis_bygenres, genero);
-  
-  if (pair != NULL) {
-      List* pelis = pair->value;
-      Film *peli = list_first(pelis);
-      
-      while (peli != NULL) {
-        printf("ID: %s, Título: %s, Director: %s, Año: %d\n", peli->id, peli->title,
-           peli->director, peli->year);
-        peli = list_next(pelis);
-      }
-  }
+        for (int i = 0; i < list_size(generos); i++) {
+            char *genre = list_get(generos, i);
+            if (strcmp(genre, genero) == 0) {
+                printf("ID: %s, Título: %s, Director: %s, Año: %d\n",
+                       pelicula->id, pelicula->titulo, pelicula->director, pelicula->anio);
+                encontrado = true;
+                break; 
+            }
+        }
+        pair = map_next(pelis_byid);
+    }
+
+    if (!encontrado) {
+        printf("No se encontraron películas del género '%s'\n", genero);
+    }
+}
+
+void buscar_por_decada(Map *pelis_byid, char *decada) {
+    MapPair *pair = map_first(pelis_byid);
+    while (pair != NULL) {
+        Pelicula *pelicula = pair->value;
+        int inicio_decada, fin_decada;
+
+        if (strcmp(decada, "1920s") == 0) {
+            inicio_decada = 1920;
+            fin_decada = 1929;
+        } else if (strcmp(decada, "1930s") == 0) {
+            inicio_decada = 1930;
+            fin_decada = 1939;
+        } else if (strcmp(decada, "1940s") == 0) {
+            inicio_decada = 1940;
+            fin_decada = 1949;
+        } else if (strcmp(decada, "1950s") == 0) {
+            inicio_decada = 1950;
+            fin_decada = 1959;
+        } else if (strcmp(decada, "1960s") == 0) {
+            inicio_decada = 1960;
+            fin_decada = 1969;
+        } else if (strcmp(decada, "1970s") == 0) {
+            inicio_decada = 1970;
+            fin_decada = 1979;
+        } else if (strcmp(decada, "1980s") == 0) {
+            inicio_decada = 1980;
+            fin_decada = 1989;
+        } else if (strcmp(decada, "1990s") == 0) {
+            inicio_decada = 1990;
+            fin_decada = 1999;
+        } else if (strcmp(decada, "2000s") == 0) {
+            inicio_decada = 2000;
+            fin_decada = 2009;
+        } else if (strcmp(decada, "2010s") == 0) {
+            inicio_decada = 2010;
+            fin_decada = 2019;
+        } else if (strcmp(decada, "2020s") == 0) {
+            inicio_decada = 2020;
+            fin_decada = 2029;
+        } else {
+            printf("La década ingresada no es válida.\n");
+            return;
+        }
+
+        if (pelicula->anio >= inicio_decada && pelicula->anio <= fin_decada) {
+            printf("Título: %s, Año: %d\n", pelicula->titulo, pelicula->anio);
+        }
+
+        pair = map_next(pelis_byid);
+    }
+}
+
+bool is_in_range(double calificacion, RangoCalificacion range) {
+    return calificacion >= range.limite_inferior && calificacion <= range.limite_superior;
+}
+
+void buscar_por_calificacion(Map *pelis_byid, RangoCalificacion range) {
+    MapPair *pair = map_first(pelis_byid);
+    bool encontrado = false;
+
+    while (pair != NULL) {
+        Pelicula *pelicula = pair->value;
+
+        if (is_in_range(pelicula->rating, range)) {
+            printf("ID: %s, Título: %s, Director: %s, Año: %d, Calificación: %.2f\n",
+                   pelicula->id, pelicula->titulo, pelicula->director, pelicula->anio, pelicula->rating);
+            encontrado = true;
+        }
+
+        pair = map_next(pelis_byid);
+    }
+
+    if (!encontrado) {
+        printf("No se encontraron películas en el rango de calificaciones %.2f - %.2f\n", range.limite_inferior, range.limite_superior);
+    }
+}
+
+void buscar_por_decada_y_genero(Map *pelis_byid, char *decada, const char *genero) {
+    int inicio_decada, fin_decada;
+
+    if (strcmp(decada, "1920s") == 0) {
+        inicio_decada = 1920;
+        fin_decada = 1929;
+    } else if (strcmp(decada, "1930s") == 0) {
+        inicio_decada = 1930;
+        fin_decada = 1939;
+    } else if (strcmp(decada, "1940s") == 0) {
+        inicio_decada = 1940;
+        fin_decada = 1949;
+    } else if (strcmp(decada, "1950s") == 0) {
+        inicio_decada = 1950;
+        fin_decada = 1959;
+    } else if (strcmp(decada, "1960s") == 0) {
+        inicio_decada = 1960;
+        fin_decada = 1969;
+    } else if (strcmp(decada, "1970s") == 0) {
+        inicio_decada = 1970;
+        fin_decada = 1979;
+    } else if (strcmp(decada, "1980s") == 0) {
+        inicio_decada = 1980;
+        fin_decada = 1989;
+    } else if (strcmp(decada, "1990s") == 0) {
+        inicio_decada = 1990;
+        fin_decada = 1999;
+    } else if (strcmp(decada, "2000s") == 0) {
+        inicio_decada = 2000;
+        fin_decada = 2009;
+    } else if (strcmp(decada, "2010s") == 0) {
+        inicio_decada = 2010;
+        fin_decada = 2019;
+    } else if (strcmp(decada, "2020s") == 0) {
+        inicio_decada = 2020;
+        fin_decada = 2029;
+    } else {
+        printf("La década ingresada no es válida.\n");
+        return;
+    }
+
+    printf("Películas del género '%s' lanzadas en la década de los %s:\n", genero, decada);
+
+    MapPair *pair = map_first(pelis_byid);
+    while (pair != NULL) {
+        Pelicula *pelicula = pair->value;
+
+        if (pelicula->anio >= inicio_decada && pelicula->anio <= fin_decada) {
+            List *generos = pelicula->generos;
+            for (int i = 0; i < list_size(generos); i++) {
+                char *genre = list_get(generos, i);
+                if (strcmp(genre, genero) == 0) {
+                    printf("Título: %s, Año: %d\n", pelicula->titulo, pelicula->anio);
+                    break;
+                }
+            }
+        }
+        pair = map_next(pelis_byid);
+    }
+}
+
+void ejecutarPrograma() {
+    char opcion;
+    Map *pelis_byid = map_create(is_equal_str);
+    RangoCalificacion rango_calificaciones;
+
+    do {
+        mostrarMenuPrincipal();
+        printf("Ingrese su opción: ");
+        scanf(" %c", &opcion);
+        char decada[10];
+        char genero[100];
+        char id[100];
+        switch (opcion) {
+            case '1':
+                cargar_peliculas(pelis_byid);
+                break;
+            case '2':
+                printf("Ingrese el ID de la película: ");
+                scanf("%s", id);
+                buscar_por_id(pelis_byid, id);
+                break;
+            case '3':
+                buscar_por_genero(pelis_byid, "Drama");
+                break;
+            case '4':
+                printf("Ingrese la década (por ejemplo, '1980s'): ");
+                scanf("%s", decada);
+                buscar_por_decada(pelis_byid, decada);
+                break;
+            case '5':
+                printf("Ingrese el límite inferior del rango de calificaciones: ");
+                scanf("%lf", &rango_calificaciones.limite_inferior);
+                printf("Ingrese el límite superior del rango de calificaciones: ");
+                scanf("%lf", &rango_calificaciones.limite_superior);
+                buscar_por_calificacion(pelis_byid, rango_calificaciones);
+                break;
+            case '6':
+                printf("Ingrese la década (por ejemplo, '1980s'): ");
+                scanf("%s", decada);
+                printf("Ingrese el género: ");
+                scanf("%s", genero);
+                buscar_por_decada_y_genero(pelis_byid, decada, genero);
+                break;
+            case '7':
+                break;
+            default:
+                break;
+        }
+    } while (opcion != '8');
+
+    map_destroy(pelis_byid);
 }
 
 int main() {
-  char opcion; // Variable para almacenar una opción ingresada por el usuario
-               // (sin uso en este fragmento)
-
-  // Crea un mapa para almacenar películas, utilizando una función de
-  // comparación que trabaja con claves de tipo string.
-  Map *pelis_byid = map_create(is_equal_str);
-  Map *pelis_bygenres = map_create(is_equal_str);
-
-  // Recuerda usar un mapa por criterio de búsqueda
-
-  do {
-    mostrarMenuPrincipal();
-    printf("Ingrese su opción: ");
-    scanf(" %c", &opcion);
-
-    switch (opcion) {
-    case '1':
-      cargar_peliculas(pelis_byid, pelis_bygenres);
-      break;
-    case '2':
-      buscar_por_id(pelis_byid);
-      break;
-    case '3':
-      break;
-    case '4':
-      buscar_por_genero(pelis_bygenres);
-      break;
-    case '5':
-      break;
-    case '6':
-      break;
-    case '7':
-      break;
-    }
-    presioneTeclaParaContinuar();
-
-  } while (opcion != '8');
-
-  return 0;
+    ejecutarPrograma();
+    return 0;
 }
