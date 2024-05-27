@@ -12,7 +12,7 @@ typedef struct {
     int square[3][3]; // Matriz 3x3 que representa el tablero
     int x;    // Posición x del espacio vacío
     int y;    // Posición y del espacio vacío
-    List* actions; //Secuencia de movimientos para llegar al estado
+    List* actions; // Secuencia de movimientos para llegar al estado
 } State;
 
 int distancia_L1(State* state) {
@@ -31,9 +31,9 @@ int distancia_L1(State* state) {
 
 bool is_final_state(State* state) {
     int goal[3][3] = {
-        {1, 2, 3},
-        {4, 5, 6},
-        {7, 8, 0}
+        {0, 1, 2},
+        {3, 4, 5},
+        {6, 7, 8}
     };
     for (int i = 0; i < 3; i++) {
         for (int j = 0; j < 3; j++) {
@@ -47,6 +47,10 @@ bool is_final_state(State* state) {
 
 State* copy_state(State* state) {
     State* new_state = (State*)malloc(sizeof(State));
+    if (!new_state) {
+        fprintf(stderr, "Error al asignar memoria para new_state\n");
+        exit(1);
+    }
     memcpy(new_state->square, state->square, sizeof(int) * 9);
     new_state->x = state->x;
     new_state->y = state->y;
@@ -57,6 +61,14 @@ State* copy_state(State* state) {
         node = list_next(state->actions);
     }
     return new_state;
+}
+
+void free_state(State* state) {
+    if (state) {
+        list_clean(state->actions);
+        free(state->actions);
+        free(state);
+    }
 }
 
 State* transition(State* state, int dx, int dy) {
@@ -117,12 +129,13 @@ void imprimirSecuencia(List* actions) {
             case 3: printf("Abajo\n"); break;
             case -1: printf("Izquierda\n"); break;
             case 1: printf("Derecha\n"); break;
+            default: printf("Movimiento desconocido: %d\n", action); break;
         }
         current = list_next(actions);
     }
 }
 
-void dfs(State* initial_state) {
+State* dfs(State* initial_state) {
     List* stack = list_create();
     list_pushBack(stack, initial_state);
     int iterations = 0;
@@ -136,7 +149,9 @@ void dfs(State* initial_state) {
             imprimirEstado(state);
             imprimirSecuencia(state->actions);
             printf("Total de movimientos: %d\n", list_size(state->actions));
-            return;
+            list_clean(stack);
+            free(stack);
+            return state;
         }
 
         List* neighbors = get_neighbors(state);
@@ -144,13 +159,19 @@ void dfs(State* initial_state) {
         while ((neighbor = list_popFront(neighbors)) != NULL) {
             list_pushBack(stack, neighbor);
         }
+
         list_clean(neighbors);
+        free(neighbors);
+        break;
     }
 
     printf("No se encontró solución\n");
+    list_clean(stack);
+    free(stack);
+    return NULL;
 }
 
-void bfs(State* initial_state) {
+State* bfs(State* initial_state) {
     List* queue = list_create();
     list_pushBack(queue, initial_state);
     int iterations = 0;
@@ -160,11 +181,13 @@ void bfs(State* initial_state) {
         iterations++;
 
         if (is_final_state(state)) {
-            printf("Solución encontrada en %d iteraciones\n", iterations);
+
             imprimirEstado(state);
             imprimirSecuencia(state->actions);
             printf("Total de movimientos: %d\n", list_size(state->actions));
-            return;
+            list_clean(queue);
+            free(queue);
+            return state;
         }
 
         List* neighbors = get_neighbors(state);
@@ -173,19 +196,24 @@ void bfs(State* initial_state) {
             list_pushBack(queue, neighbor);
         }
         list_clean(neighbors);
+        free(neighbors);
     }
 
     printf("No se encontró solución\n");
+    list_clean(queue);
+    free(queue);
+    return NULL;
 }
 
-void best_first(State* initial_state) {
-    Heap* heap = heap_create();
-    heap_push(heap, initial_state, distancia_L1(initial_state));
+State* best_first(State* initial_state) {
+    Heap* priority_queue = heap_create();
+    heap_push(priority_queue, initial_state, distancia_L1(initial_state));
     int iterations = 0;
+    const int MAX_ITERATIONS = 1000; // Límite máximo de iteraciones
 
-    while (heap_top(heap) != NULL) {
-        State* state = heap_top(heap);
-        heap_pop(heap);
+    while (heap_top(priority_queue) != NULL && iterations < MAX_ITERATIONS) {
+        State* state = heap_top(priority_queue);
+        heap_pop(priority_queue);
         iterations++;
 
         if (is_final_state(state)) {
@@ -193,37 +221,66 @@ void best_first(State* initial_state) {
             imprimirEstado(state);
             imprimirSecuencia(state->actions);
             printf("Total de movimientos: %d\n", list_size(state->actions));
-            return;
+            heap_pop(priority_queue);
+            free(priority_queue);
+            return state;
         }
 
         List* neighbors = get_neighbors(state);
-        void* neighbor;
-        while ((neighbor = list_popFront(neighbors)) != NULL) {
-            heap_push(heap, neighbor, distancia_L1(neighbor));
+        void* current = list_first(neighbors);
+        while (current != NULL) {
+            State* neighbor = (State*)current;
+            heap_push(priority_queue, neighbor, distancia_L1(neighbor));
+            current = list_next(neighbors);
         }
         list_clean(neighbors);
+        free(neighbors);
     }
 
-    printf("No se encontró solución\n");
+    printf("No se encontró solución después de %d iteraciones\n", MAX_ITERATIONS);
+    return NULL;
+}
+
+void imprimirComparacion(State* estado_actual) {
+    printf("Estado actual del puzzle:\n");
+    imprimirEstado(estado_actual);
+
+    if (is_final_state(estado_actual)) {
+        printf("\n¡El estado actual coincide con el estado final!\n");
+    } else {
+        printf("\nEl estado actual NO coincide con el estado final.\n");
+    }
+}
+
+State* reset_estado_inicial() {
+    State* estado_inicial = (State*)malloc(sizeof(State));
+    if (!estado_inicial) {
+        fprintf(stderr, "Error al asignar memoria para estado_inicial\n");
+        exit(1);
+    }
+    int initial_square[3][3] = {
+        {0, 2, 8},
+        {1, 3, 4},
+        {6, 5, 7}
+    };
+    memcpy(estado_inicial->square, initial_square, sizeof(int) * 9);
+    estado_inicial->x = 0;
+    estado_inicial->y = 0;
+    estado_inicial->actions = list_create();
+    return estado_inicial;
 }
 
 int main() {
-    // Estado inicial del puzzle
-    State estado_inicial = {
-        {{0, 2, 8}, // Primera fila (0 representa espacio vacío)
-         {1, 3, 4}, // Segunda fila
-         {6, 5, 7}}, // Tercera fila
-        0, 1   // Posición del espacio vacío (fila 0, columna 1)
-    };
-    estado_inicial.actions = list_create();
+    State* estado_inicial = reset_estado_inicial();
 
     // Imprime el estado inicial
     printf("Estado inicial del puzzle:\n");
-    imprimirEstado(&estado_inicial);
+    imprimirEstado(estado_inicial);
 
-    printf("Distancia L1:%d\n", distancia_L1(&estado_inicial));
+    printf("Distancia L1: %d\n", distancia_L1(estado_inicial));
 
     int opcion;
+    State* resultado = NULL;
     do {
         printf("\n***** EJEMPLO MENU ******\n");
         puts("========================================");
@@ -239,15 +296,38 @@ int main() {
         scanf(" %d", &opcion);
         getchar(); // Limpiar el buffer de entrada
 
+        // Reiniciar el estado inicial
+        free_state(estado_inicial); // Liberar el estado inicial anterior
+        estado_inicial = reset_estado_inicial(); // Reiniciar el estado inicial
+
         switch (opcion) {
             case 1:
-                dfs(&estado_inicial);
+                resultado = dfs(estado_inicial);
+                if (resultado != NULL) {
+                    printf("Estado final del puzzle:\n");
+                    imprimirEstado(resultado);
+                    printf("Total de movimientos: %d\n", list_size(resultado->actions));
+                    free_state(resultado);
+                }
                 break;
             case 2:
-                bfs(&estado_inicial);
+                resultado = bfs(estado_inicial);
+                if (resultado != NULL) {
+                    printf("Estado final del puzzle:\n");
+                    imprimirEstado(resultado);
+                    printf("Total de movimientos: %d\n", list_size(resultado->actions));
+                    free_state(resultado);
+                }
                 break;
             case 3:
-                best_first(&estado_inicial);
+                resultado = best_first(estado_inicial);
+                imprimirComparacion(estado_inicial);
+                if (resultado != NULL) {
+                    printf("Estado final del puzzle:\n");
+                    imprimirEstado(resultado);
+                    printf("Total de movimientos: %d\n", list_size(resultado->actions));
+                    free_state(resultado);
+                }
                 break;
             case 4:
                 break;
@@ -255,12 +335,10 @@ int main() {
                 printf("Opción no válida. Por favor, intente nuevamente.\n");
                 break;
         }
-        if (opcion != 4) {
-            presioneTeclaParaContinuar();
-            limpiarPantalla();
-        }
 
     } while (opcion != 4);
+
+    free_state(estado_inicial); // Liberar el estado inicial al salir
 
     return 0;
 }
